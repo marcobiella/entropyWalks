@@ -1,0 +1,522 @@
+---
+title: 'Entropy and the Random Walk of P-value and effect size'
+author: "Marco Biella"
+date: "17 april 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+#packages
+library(tidyverse)
+library(entropy)
+library(reshape2)
+
+#init
+sampleSize <- 200
+```
+
+## The Idea
+  
+Entering the corridor of stability is a matter of *real* effect size (ie. the effect size in the population). If the effect actually exists, sooner or later you find yourself in it. When you can enter it, depends on random sampling. Keeping effect size constant, how many observations are needed to enter the corridor of stability depends on the order of the observations. In fact, p-value keep changing at every new observation and, even if its ultimate value is order-invariant, its path is a noisy walk.  
+So far, a considerably large amount of scholars endeavoured how to detect the existence of a given effect based on the endpoint of such walks of the p-value. This approach rised the attention to concept such as power but the importance of p-values have never been questioned. In this work, I am not trying to question the importance devoted to these constructs, but I am trying to bring the readers' attention on a largely neglected aspect of the process that generates the ultimate rejection of a null hypothesis, the walk of the p-value.  
+According to the usual, and lately debated, level of significance ($\alpha = .05$), we can reject the non-existence of an effect when the probability of it being observed under $H_0$ is less than .05. Here, I will rely on this convention even if $\alpha$ does not need to be dichotomized artificially but should be simply considered a continuous measure, as it really is.  
+P-value walks of both existing and non-existing effects cannot establish the exixtence of an effect according to their ending points if the sample is underpowered. Unfortunately, they may fail again in the opposite circumstances, when a huge amount of data are available, an increasingly likely scenario in the field of media studies. However, p-walks have something to say even in those circumstances.  
+Something that is always presents, instead of sufficient power, is the process that generates the data. Such process could be the order of nature in the case of an existing phenomenon, or just random noise that fools the researcher and produce uniformly distributed p-value. Taking advantage of the presence of order versus the presence of random caos, I could try to gather insights on the direction of the p-walks. Measuring the etropy of the p-walks at each step, we can infer whether it is shrinking toward order or if it is stable (actually, slowly increasing with sample size), indicating that no ordering force is at work.   
+  
+#### The Present Work  
+  
+My aim in this work is to show I develop the above mentioned line of thinking as well as the simulation study presented here. I develop here 2 simulations. The first is a rough prototype, while the second is a more refined version of the former. I am going to present both simulations in order to show the steps of the workflow.  
+The whole work is made using RMarkdown, and is developed in order to be fully reproducible.  
+  
+#### Steps of the simulation  
+  
+1. Creation of a model population with known effect size  
+2. Creation of a model population without any effect  
+3. Sampling one population  
+4. Fitting a model in the sample  
+5. Repeating steps 4 and 5 for both populations  
+6. Exploring the simulation results  
+  
+#### Simulations v1 and v2  
+  
+The first simulation will compare two population, one with and one without the effect. The second simulation will repeat this process on more population showing a wide range of effects. The simulation v2 is a more refined version of the simulation v1.  
+  
+## Generating the population  
+  
+The first population for the simulation v1 is a series of observation of the independent variable (IV) and the dependent variable (DV) bounded by a given effect size.  
+  
+```{r}
+set.seed(52332)
+
+#parameters
+popSize <- 100000
+popEff <- .5
+
+#generate model
+IV <- rnorm(n = popSize)
+DV <- IV * popEff + rnorm(n = length(IV))
+
+#merge population
+pop <- as.data.frame(cbind(IV, DV))
+
+#population model
+#fit model
+modelBase <- lm(data = pop,
+                formula = DV ~ IV)
+summary(modelBase)
+
+#store population effect
+popEff <- summary(modelBase)[[4]][2, 1]
+```
+
+## Generating the NULL population  
+  
+The second population for the simulation v1 mirrors the first one but the independent variable and the dependent variable are no bounded. Both variable are generated independently.  
+  
+```{r}
+set.seed(52632)
+
+#parameters
+popSize <- 100000
+
+#generate model
+IV <- rnorm(n = popSize)
+DV <- rnorm(n = popSize)
+
+#merge population
+popNull <- as.data.frame(cbind(IV, DV))
+
+#population model
+#fit null model
+modelNull <- lm(data = popNull,
+                formula = DV ~ IV)
+summary(modelNull)
+
+#store population null effect
+popEffNull <- summary(modelNull)[[4]][2, 1]
+```
+
+## Generating the sample  
+  
+In both simulations, populations are sampled randomly at each iteration. This process produces a finite number of sample that are explored.  
+  
+```{r}
+set.seed(23538)
+#generate sample
+samplePop <- pop[sample(x = 1:nrow(pop), size = sampleSize), ]
+
+#fit model
+modelSamp <- lm(data = samplePop,
+                formula = DV ~ IV)
+summary(modelSamp)
+```
+
+## Simulation v1  
+  
+The first simulation samples one population at a time. Sampled observations are analysed and the results are stored in vectors that will be binded once the simulation is terminated.  
+  
+```{r}
+#population with effect
+#simulation init
+nSim <- 100
+uniqueRun <- 0
+sampId <- 0
+simResults <- c()
+realSampleSize <- c()
+effectsVct <- c()
+sigVct <- c()
+runId <- c()
+sampIds <- c()
+storedPop <- c()
+storedPopEff <- c()
+
+for(simRun in 1:nSim){
+    
+    #resample popolation
+    samp <- sample(x = 1:nrow(pop), size = sampleSize)
+    samp <- pop[samp,]
+    #create sample id
+    sampId <- sampId + 1
+    #storing sampled population
+    whichPop <- "H_1"
+
+    #one step for each increment in sample size
+    for(steps in 10:sampleSize){
+
+        #re-fit model
+        modelIter <- lm(data = samp[1:steps,],
+                        formula = DV ~ IV)
+        effectsVct <- c(effectsVct, summary(modelIter)[[4]][2, 1])
+        sigVct <- c(sigVct, summary(modelIter)[[4]][2, 4])
+        realSampleSize <- c(realSampleSize, steps)
+        runId <- c(runId, uniqueRun)
+        storedPop <- c(storedPop, whichPop)
+        uniqueRun <- uniqueRun + 1
+        sampIds <- c(sampIds, sampId)
+        storedPopEff <- c(storedPopEff, popEff)
+    }
+}
+
+
+for(simRun in 1:nSim){
+    
+    #resample null popolation
+    samp <- sample(x = 1:nrow(popNull), size = sampleSize)
+    samp <- popNull[samp,]
+    #create sample id
+    sampId <- sampId + 1
+    #storing sampled population
+    whichPop <- "H_0"
+
+    #one step for each increment in sample size
+    for(steps in 10:sampleSize){
+
+        #re-fit model
+        modelIter <- lm(data = samp[1:steps,],
+                        formula = DV ~ IV)
+        effectsVct <- c(effectsVct, summary(modelIter)[[4]][2, 1])
+        sigVct <- c(sigVct, summary(modelIter)[[4]][2, 4])
+        realSampleSize <- c(realSampleSize, steps)
+        runId <- c(runId, uniqueRun)
+        storedPop <- c(storedPop, whichPop)
+        uniqueRun <- uniqueRun + 1
+        sampIds <- c(sampIds, sampId)
+        storedPopEff <- c(storedPopEff, popEffNull)
+    }
+}
+
+#store results
+simResults <- cbind(effectsVct, sigVct, storedPopEff, sampIds, simRun, runId, realSampleSize, storedPop)
+    
+#formatting results
+simResults <- as.data.frame(simResults)
+simResults[, -8] <- apply(X = simResults[, -8], MARGIN = 2, FUN = as.character)
+simResults[, -8] <- apply(X = simResults[, -8], MARGIN = 2, FUN = as.numeric, length = 2)
+simResults$storedPop <- as.character(simResults$storedPop)
+
+#splitting observation in sample sizes bins
+simResults$sampleBin <- round(x = simResults$realSampleSize / 10, digits = 0)
+
+#clean environment
+rm(effectsVct, nSim, popEff, popEffNull, realSampleSize, runId, sampId, sampIds, sigVct, simRun, steps, uniqueRun, modelIter, DV, IV)
+
+#format results
+simResults$effectsEntr <- round(x = simResults$effectsVct, digits = 2) * 100
+simResults$sigEntr <- round(x = simResults$sigVct, digits = 2) * 100
+```
+
+### Data Visualization
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = simResults, aes(y = sigVct, x = realSampleSize,
+                              group = sampIds)) +
+    geom_line(alpha = .3) +
+    labs(y = "P-value", x = "Sample size") +
+    facet_wrap(~storedPop)
+```
+  
+As expected, p-values calculated on samples drawn from the NULL population move at random in the whole parameter space, whereas p-values calculated on samples drawn from the population with a real effect size tends to approach significance.  
+  
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = simResults, aes(y = effectsVct, x = realSampleSize,
+                              group = sampIds)) +
+    geom_line(alpha = .3) +
+    labs(y = "Effect", x = "Sample size") +
+    facet_wrap(~storedPop)
+```
+  
+Effects sizes show the expected pattern too. As sample sizes increase, effect sizes tend to stabilize around the real value. Obviously, such values differ between the two populations.  
+The trends of p-values and effect sizes show that the simulation works as intended.  
+  
+## Compute Shannon Entropy  
+  
+Entropy can be understood as a measure of disorder. It is generally known for its pivotal role in thermodynamics and here I focus on its analogous interpretation in an information theory framework.  
+In the present work, entropy is intended as Shannon entropy (Shannon, 1948). For each possible value in a series, entropy is the negative logarithm of the probability of the value.  
+$$ H =-\sum_{i=0}^{n-1} p_i \log (p_i)$$
+In the equation, entropy is denoted by $H$, $n$ is the number of item in the series and $p_i$ is the probability of the $i^{th}$ value in the series.  
+Following its definition, the maximum entropy is reached when the uncertainty is also at its maximum. Therefore, when no effect is present in a population, the p-walk (and the walk of the estimated effect size) should be a random variable with maximum entropy. By providing an index of the uncertainty in a series of events, entropy can signal if the p-walks are going somewhere or if they are just moving at random.  
+However, p-walks tends to stabilize when the sample size increases, therfore, I expect that entropy will increase at a lower rate for each new observation. The trend that could possibly signal us the presence of an ordering force in the data is a firmer decrease in the increments of entropy after a new observation.  
+In the present work, entropy is assessed using an estimator based on James-Stein shrinkage (Gruber, 1998), which proved to be efficient and suitable for scenarios involving a small amount of observation (Hausser & Strimmer, 2009).  
+
+```{r, echo=FALSE}
+#reshaping
+entropyData <- c()
+sampleSteps <- seq(from = 20, to = 200, by = 5)
+for(runIndx in unique(simResults$sampIds)){
+    #subset data
+    tempDat <- simResults[simResults$sampIds == runIndx, ]
+    #extract temporal values
+    tempValues <- 
+        c(
+        #max sample size
+        "sampleSize" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "realSampleSize"],
+        #final p-value
+        "finalP" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "sigVct"],
+        #final effect
+        "finalEff" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "effectsVct"],
+        #sample id
+        "sampId" = runIndx,
+        #population
+        "population" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "storedPop"])
+    
+    #entropies
+    pEntr <- c()
+    effEntr <- c()
+    for(entrIndx in sampleSteps){
+        #p value
+        pEntr <- c(pEntr, suppressWarnings(entropy.shrink(y = tempDat[tempDat$realSampleSize <= entrIndx, "sigEntr"], verbose = FALSE)[1]))
+        names(pEntr)[length(pEntr)] <- paste0("p", entrIndx, "entropy")
+        #effects
+        effEntr <- c(effEntr, suppressWarnings(entropy.shrink(y = tempDat[tempDat$realSampleSize <= entrIndx, "effectsEntr"], verbose = FALSE)[1]))
+        names(effEntr)[length(effEntr)] <- paste0("eff", entrIndx, "entropy")
+    }
+    
+
+    #store temporary data
+    tempValues <- c(tempValues, pEntr, effEntr)
+    entropyData <- rbind(entropyData , tempValues)
+    rm(tempValues, pEntr, effEntr)
+}
+rownames(entropyData) <- 1:nrow(entropyData)
+#actual reshape
+entrData <- suppressWarnings(gather(data = as.data.frame(entropyData),
+                   key =  "measure",
+                   value = "entropy",
+                   -sampleSize, -finalP, -finalEff, -sampId, -population,
+                   factor_key=TRUE))
+#formatting
+entrData$measure <- as.character(entrData$measure)
+entrData$series <- gsub(pattern = "[0-9]|entropy", replacement = "", x = entrData$measure)
+entrData$observations <- gsub(pattern = "p|eff|entropy", replacement = "", x = entrData$measure)
+#reshaping dcast
+entrData <- dcast(data = entrData,
+                  formula = sampleSize + finalP + finalEff + sampId + observations + population ~ series,
+                  value.var = "entropy")
+#formatting
+entrData[, c("sampleSize", "finalP", "finalEff", "sampId")] <- apply(X = entrData[, c("sampleSize", "finalP", "finalEff", "sampId")], MARGIN = 2, FUN = as.character)
+entrData[, c("sampleSize", "finalP", "finalEff", "sampId", "p", "eff")] <- apply(X = entrData[, c("sampleSize", "finalP", "finalEff", "sampId", "p", "eff")], MARGIN = 2, FUN = as.numeric, length = 3)
+entrData$observations <- as.numeric(as.integer(entrData$observations))
+```
+
+### Data Visualization  
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = entrData, aes(y = p, x = observations,
+                            group = sampId, color = population)) +
+    geom_line(alpha = .3) +
+    labs(y = "Entropy of P-values", x = "# of observations") +
+    facet_wrap(~population)
+```
+
+The graph shows the change in the entropy of the p-walks as new observations are gathered. Each line represent one sample of the simulation, and p-walks are splitted in two different panels according to the population they are drawn from. The first panel (red lines) shows entropy of the samples generated from the null population, and the second panesl (blue lines) shows entropy of the samples genereted from the population with an effect.  
+There is a clear increasing trend in entropy of both population as the sample sizes increase but the two panels appear to be strikingly different. The increase in entropy caused by new observations seems to dramatically stop once a certain number of observation is reached in the right panel. It seems that entropy increases more slowly in the population where an effect is present, and it slows down even more after a certain number of observations.  
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = entrData, aes(y = p, x = observations,
+                            group = population, color = population)) +
+    geom_smooth(method = "loess") +
+    labs(y = "Entropy of P-values", x = "# of observations")
+```
+
+This graph shows the same data of the previous one plotted differently. Here, every lines rapresent the smoothed average of the entropy of each population aggregated using a local regression.  
+The difference between the two populations is even more clear and other features become more evident. First, the general increasing trends appear to be clearly different. Entropy in the null population increases in a regular fashon, whereas entropy in the population where an effect is present increases more slowly. Moreover, it seems to be a sort of "elbow" slightly before 75 observations. A second main difference is the wider error of the blue line. In fact, the grey area around the blue line is clearly visible whereas the red line appears to be extremely sharp. It is clear that entropy of the p-walks of samples drawn from the population where an effect is present shows greater variability.   
+
+## Simulation v2
+```{r}
+#population with effect
+#simulation init
+effectSizes <- seq(from = .1, to = 1, by = .1)
+nSim <- 100
+uniqueRun <- 0
+sampId <- 0
+realSampleSize <- c()
+effectsVct <- c()
+sigVct <- c()
+runId <- c()
+sampIds <- c()
+storedPop <- c()
+storedPopEff <- c()
+
+set.seed(256467)
+for(simRun in 1:(nSim*length(effectSizes))){
+    
+    #create a population based on effect sizes
+    IV <- rnorm(n = popSize)
+    DV <- effectSizes[simRun %% length(effectSizes) + 1] * IV + rnorm(n = popSize)
+    pop <- as.data.frame(cbind(IV, DV))
+    #model population
+    popModel <- lm(data = pop,
+                   formula = DV ~ IV)
+    popEff <- summary(popModel)[[4]][2, 1]
+        
+    #sample popolation
+    samp <- sample(x = 1:nrow(pop), size = sampleSize)
+    samp <- pop[samp,]
+    #create sample id
+    sampId <- sampId + 1
+    #storing sampled population
+    whichPop <- "continuously_simulated"
+    
+    #cleaning
+    rm(pop, DV, IV)
+
+    #one step for each increment in sample size
+    for(steps in 10:sampleSize){
+
+        #re-fit model
+        modelIter <- lm(data = samp[1:steps,],
+                        formula = DV ~ IV)
+        effectsVct <- c(effectsVct, summary(modelIter)[[4]][2, 1])
+        sigVct <- c(sigVct, summary(modelIter)[[4]][2, 4])
+        realSampleSize <- c(realSampleSize, steps)
+        runId <- c(runId, uniqueRun)
+        storedPop <- c(storedPop, whichPop)
+        uniqueRun <- uniqueRun + 1
+        sampIds <- c(sampIds, sampId)
+        storedPopEff <- c(storedPopEff, popEff)
+    }
+}
+
+
+#store results
+simResults2 <- cbind(effectsVct, sigVct, storedPopEff, sampIds, simRun, runId, realSampleSize, storedPop)
+    
+#formatting results
+simResults2 <- as.data.frame(simResults2)
+simResults2[, -8] <- apply(X = simResults2[, -8], MARGIN = 2, FUN = as.character)
+simResults2[, -8] <- apply(X = simResults2[, -8], MARGIN = 2, FUN = as.numeric, length = 2)
+simResults2$storedPop <- as.character(simResults2$storedPop)
+
+#splitting observation in sample sizes bins
+simResults2$sampleBin <- round(x = simResults2$realSampleSize / 10, digits = 0)
+
+#clean environment
+rm(effectsVct, nSim, popEff, realSampleSize, runId, sampId, sampIds, sigVct, simRun, steps, uniqueRun, modelIter)
+
+#format results
+simResults2$effectsEntr <- round(x = simResults2$effectsVct, digits = 2) * 100
+simResults2$sigEntr <- round(x = simResults2$sigVct, digits = 2) * 100
+simResults2$effBin <- round(x = simResults2$storedPopEff, digits = 2) * 100
+simResults2$effBin <- simResults2$effBin %/%  10
+```
+
+### Data Visualization
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = simResults2, aes(y = sigVct, x = realSampleSize,
+                              group = effBin, color = as.factor(effBin))) +
+    geom_smooth(method = "loess") +
+    labs(y = "P-value", x = "Sample size")
+```
+
+This plot shows the p-values at different sample sizes. Each line represents different samples aggregated using local regression. Samples are grouped in bins according to the effect size of the population they are drawn from.  
+As we can see, p-values show the expected trend. Bigger sample sizes push p-values toward significance level at different speeds. Obviously, p-values approach significance at greater speed when the effect is stronger.  
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = simResults2, aes(y = effectsVct, x = realSampleSize,
+                              group = effBin, color = as.factor(effBin))) +
+    geom_smooth(method = "loess") +
+    labs(y = "Effect", x = "Sample size")
+```
+
+This plot has the same structure as the previous one. The only difference is that on the y axis effect size instead of p-value is reported. We can see that effects sizes show the expected pattern. Bigger effect sizes are displayed at higher values along the y axis and smaller effect sizes show wider variability around the local regression line.  
+
+### Entropy  
+  
+Entropy is computed as before.  
+
+```{r, echo=FALSE}
+#reshaping
+entropyData2 <- c()
+sampleSteps <- seq(from = 20, to = 200, by = 5)
+for(runIndx in unique(simResults$sampIds)){
+    #subset data
+    tempDat <- simResults2[simResults2$sampIds == runIndx, ]
+    #extract temporal values
+    tempValues <- 
+        c(
+        #max sample size
+        "sampleSize" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "realSampleSize"],
+        #final p-value
+        "finalP" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "sigVct"],
+        #final effect
+        "finalEff" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "effectsVct"],
+        #sample id
+        "sampId" = runIndx,
+        #population
+        "population" = tempDat[tempDat$realSampleSize == max(tempDat$realSampleSize), "storedPop"])
+    
+    #entropies
+    pEntr <- c()
+    effEntr <- c()
+    for(entrIndx in sampleSteps){
+        #p value
+        pEntr <- c(pEntr, suppressWarnings(entropy.shrink(y = tempDat[tempDat$realSampleSize <= entrIndx, "sigEntr"], verbose = FALSE)[1]))
+        names(pEntr)[length(pEntr)] <- paste0("p", entrIndx, "entropy")
+        #effects
+        effEntr <- c(effEntr, suppressWarnings(entropy.shrink(y = tempDat[tempDat$realSampleSize <= entrIndx, "effectsEntr"], verbose = FALSE)[1]))
+        names(effEntr)[length(effEntr)] <- paste0("eff", entrIndx, "entropy")
+    }
+    
+
+    #store temporary data
+    tempValues <- c(tempValues, pEntr, effEntr)
+    entropyData2 <- rbind(entropyData2, tempValues)
+    rm(tempValues, pEntr, effEntr)
+}
+rownames(entropyData2) <- 1:nrow(entropyData2)
+#actual reshape
+entrData2 <- suppressWarnings(gather(data = as.data.frame(entropyData2),
+                   key =  "measure",
+                   value = "entropy",
+                   -sampleSize, -finalP, -finalEff, -sampId, -population,
+                   factor_key=TRUE))
+#formatting
+entrData2$measure <- as.character(entrData2$measure)
+entrData2$series <- gsub(pattern = "[0-9]|entropy", replacement = "", x = entrData2$measure)
+entrData2$observations <- gsub(pattern = "p|eff|entropy", replacement = "", x = entrData2$measure)
+#reshaping dcast
+entrData2 <- dcast(data = entrData2,
+                  formula = sampleSize + finalP + finalEff + sampId + observations + population ~ series,
+                  value.var = "entropy")
+#formatting
+entrData2[, c("sampleSize", "finalP", "finalEff", "sampId")] <- apply(X = entrData2[, c("sampleSize", "finalP", "finalEff", "sampId")], MARGIN = 2, FUN = as.character)
+entrData2[, c("sampleSize", "finalP", "finalEff", "sampId", "p", "eff")] <- apply(X = entrData2[, c("sampleSize", "finalP", "finalEff", "sampId", "p", "eff")], MARGIN = 2, FUN = as.numeric, length = 3)
+entrData2$observations <- as.numeric(as.integer(entrData2$observations))
+entrData2$effBin <- round(x = entrData2$finalEff, digits = 2) * 100
+entrData2$effBin <- entrData2$effBin %/%  10
+```
+
+### Data Visualization
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = entrData2, aes(y = p, x = observations,
+                            group = sampId, color = as.factor(effBin))) +
+    geom_line(alpha = .3) +
+    labs(y = "Entropy of P-values", x = "# of observations")
+```
+
+Here, entropy of each sample is plotted against the number of observations. From this plot we can see that entropy follows the same trend as in simulation one. Entropy increases after each new observation with a certain degree of variability that depends on the effect size. Unfortunately, this visual exploration soffer from overplotting. The large amount of samples plotted makes hard to distinguish differences in the trend of samples with different effect size.  
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data = entrData2, aes(y = p, x = observations,
+                            group = as.factor(effBin), color = as.factor(effBin))) +
+    geom_smooth(method = "loess") +
+    labs(y = "Entropy of P-values", x = "# of observations")
+```
+
+In this data visualization, entropy of different samples is aggregated according to effect sizes. Each line represent the aggregated mean entropy of the sample in a given effect size bin. It seems that entropy of samples with larger effect sizes shows the same "elbow" noticed in simulation one. Moreovere, it is evident that the entropy of samples with larger effect sizes increases slower than entropy of samples with smaller or null effects. 
+
+## Final considerations  
+
+From this entrpy exploration it seems that effect size impacts entropy increasing rate. In simulation one, in the absence of effects entropy increases simply due an increase in sample size. On the contrary, it seems that in samples drawn from a population with an effect entropy increase at a different rate. From the data visualization, it appears that the presence of an effect mitigates the uncertainty in the time series of p-values. Moreover, a critical point responsible for a change of entropy increasing rate seems to exist. Such point could play a cutt-off role at which the system transition into a different phase.  
+  
+### Further Improvements  
+  
+This work is far from being concluded. Enlighted by explorative findings, new questions arises and further improvements are required.  
+First of all, the findings showed here are only explorative and need further confirmation. A way to test entropy increasing rate among different population is required. Second, both simulations should be subject of scrutiny from other researchers in order to check their correctedness and reliability. Such process is made possible through open practices (the code is pubblicly available on ghithub https://github.com/marcobiella/entropyWalks).  
+This work could benefit from open practices that will surely provide constructive feedbacks aimed at pointing out its weaknesses. Such practices should be applied not only to this two weeks old project but to all projects that aim at producing better science.  
+
+#### Reference  
+Gruber, M.H.J. Improving Efficiency By Shrinkage. Marcel Dekker, Inc., New York, 1998.  
+Hausser, J., & Strimmer, K. Entropy Inference and the James-Stein Estimator, with Application to Nonlinear Gene Association Networks. Journal of Machine Learning Research 10 (2009) 1469-1484.  
+Shannon, C.E. A Mathematical Theory of Communication. Bell System Technical Journal. 1948. 27, 3, 379-423.  
